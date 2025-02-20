@@ -425,13 +425,12 @@ impl ChunkingContext for BrowserChunkingContext {
         let span = tracing::info_span!("chunking", ident = ident.to_string().await?.to_string());
         async move {
             let this = self.await?;
-            let modules = chunk_group.entries();
             let input_availability_info = availability_info.into_value();
             let MakeChunkGroupResult {
                 chunks,
                 availability_info,
             } = make_chunk_group(
-                modules,
+                chunk_group,
                 module_graph,
                 ResolvedVc::upcast(self),
                 input_availability_info,
@@ -499,13 +498,14 @@ impl ChunkingContext for BrowserChunkingContext {
 
             let entries = evaluatable_assets_ref
                 .iter()
-                .map(|&evaluatable| ResolvedVc::upcast(evaluatable));
+                .map(|&evaluatable| ResolvedVc::upcast(evaluatable))
+                .collect();
 
             let MakeChunkGroupResult {
                 chunks,
                 availability_info,
             } = make_chunk_group(
-                entries,
+                ChunkGroup::Entry(entries),
                 module_graph,
                 ResolvedVc::upcast(self),
                 availability_info,
