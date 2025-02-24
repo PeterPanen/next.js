@@ -108,7 +108,7 @@ export type ServerFields = {
   interceptionRoutes?: ReturnType<
     typeof import('./filesystem').buildCustomRoute
   >[]
-  setAppIsrStatus?: (key: string, value: boolean) => void
+  setIsrStatus?: (key: string, value: boolean) => void
   resetFetch?: () => void
 }
 
