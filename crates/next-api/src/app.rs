@@ -1203,10 +1203,7 @@ impl AppEndpoint {
             if let Some(rsc_edge_inner) = app_entry.rsc_edge_inner {
                 ChunkGroup::Async(rsc_edge_inner)
             } else {
-                ChunkGroup::Entry {
-                    entries: [app_entry.rsc_entry].into_iter().collect(),
-                    ty: ChunkGroupType::Entry,
-                }
+                ChunkGroup::Entry([app_entry.rsc_entry].into_iter().collect())
             },
             project.project_path(),
         );
@@ -1777,12 +1774,11 @@ impl AppEndpoint {
                         .concatenate(
                             chunking_context.chunk_group_assets(
                                 server_action_manifest_loader.ident(),
-                                ChunkGroup::Entry {
-                                    entries: [ResolvedVc::upcast(server_action_manifest_loader)]
+                                ChunkGroup::Entry(
+                                    [ResolvedVc::upcast(server_action_manifest_loader)]
                                         .into_iter()
                                         .collect(),
-                                    ty: ChunkGroupType::Entry,
-                                },
+                                ),
                                 module_graph,
                                 Value::new(current_availability_info),
                             ),
