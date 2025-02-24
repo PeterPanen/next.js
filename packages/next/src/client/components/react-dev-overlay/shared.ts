@@ -5,6 +5,7 @@ import type { VersionInfo } from '../../../server/dev/parse-version-info'
 import type { SupportedErrorEvent } from './ui/container/runtime-error/render-error'
 import type { ComponentStackFrame } from './utils/parse-component-stack'
 import type { DebugInfo } from './types'
+import type { DevIndicatorState } from '../../../server/dev/dev-indicator-state'
 
 type FastRefreshState =
   /** No refresh in progress. */
@@ -21,7 +22,7 @@ export interface OverlayState {
   versionInfo: VersionInfo
   notFound: boolean
   staticIndicator: boolean
-  disableDevIndicator: boolean
+  devIndicator: DevIndicatorState
   debugInfo: DebugInfo
 }
 
@@ -34,6 +35,7 @@ export const ACTION_VERSION_INFO = 'version-info'
 export const ACTION_UNHANDLED_ERROR = 'unhandled-error'
 export const ACTION_UNHANDLED_REJECTION = 'unhandled-rejection'
 export const ACTION_DEBUG_INFO = 'debug-info'
+export const ACTION_DEV_INDICATOR = 'dev-indicator'
 
 interface StaticIndicatorAction {
   type: typeof ACTION_STATIC_INDICATOR
@@ -77,6 +79,11 @@ interface VersionInfoAction {
   versionInfo: VersionInfo
 }
 
+interface DevIndicatorAction {
+  type: typeof ACTION_DEV_INDICATOR
+  devIndicator: DevIndicatorState
+}
+
 export type BusEvent =
   | BuildOkAction
   | BuildErrorAction
@@ -87,6 +94,7 @@ export type BusEvent =
   | VersionInfoAction
   | StaticIndicatorAction
   | DebugInfoAction
+  | DevIndicatorAction
 
 function pushErrorFilterDuplicates(
   errors: SupportedErrorEvent[],
@@ -107,7 +115,10 @@ export const INITIAL_OVERLAY_STATE: OverlayState = {
   errors: [],
   notFound: false,
   staticIndicator: false,
-  disableDevIndicator: process.env.__NEXT_DEV_INDICATOR?.toString() === 'false',
+  devIndicator: {
+    isDisabled: true,
+    disabledUntil: 0,
+  },
   refreshState: { type: 'idle' },
   rootLayoutMissingTags: [],
   versionInfo: { installed: '0.0.0', staleness: 'unknown' },
@@ -183,6 +194,9 @@ export function useErrorOverlayReducer() {
       }
       case ACTION_VERSION_INFO: {
         return { ..._state, versionInfo: action.versionInfo }
+      }
+      case ACTION_DEV_INDICATOR: {
+        return { ..._state, devIndicator: action.devIndicator }
       }
       default: {
         return _state
