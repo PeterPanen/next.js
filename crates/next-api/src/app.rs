@@ -53,8 +53,8 @@ use turbopack::{
 use turbopack_core::{
     asset::AssetContent,
     chunk::{
-        availability_info::AvailabilityInfo, ChunkGroupType, ChunkingContext, ChunkingContextExt,
-        EvaluatableAsset, EvaluatableAssets,
+        availability_info::AvailabilityInfo, ChunkGroupResult, ChunkGroupType, ChunkingContext,
+        ChunkingContextExt, EvaluatableAsset, EvaluatableAssets,
     },
     file_source::FileSource,
     ident::AssetIdent,
@@ -813,6 +813,7 @@ impl AppProject {
         &self,
         endpoint: Vc<AppEndpoint>,
         rsc_entry: ResolvedVc<Box<dyn Module>>,
+        runtime: NextRuntime,
         client_shared_entries: Vc<EvaluatableAssets>,
         has_layout_segments: bool,
     ) -> Result<Vc<ModuleGraphs>> {
@@ -883,7 +884,10 @@ impl AppProject {
                 let graph = SingleModuleGraph::new_with_entries_visited(
                     vec![(
                         vec![ResolvedVc::upcast(rsc_entry)],
-                        Some(ChunkGroupType::Entry),
+                        Some(match runtime {
+                            NextRuntime::NodeJs => ChunkGroupType::Entry,
+                            NextRuntime::Edge => ChunkGroupType::Evaluated,
+                        }),
                     )],
                     visited_modules,
                 );
@@ -1138,6 +1142,7 @@ impl AppEndpoint {
             .app_module_graphs(
                 self,
                 *rsc_entry,
+                runtime,
                 this.app_project.client_runtime_entries(),
                 matches!(this.ty, AppEndpointType::Page { .. }),
             )
@@ -1642,25 +1647,35 @@ impl AppEndpoint {
 
         Ok(match runtime {
             NextRuntime::Edge => {
+                let ChunkGroupResult {
+                    assets,
+                    availability_info,
+                } = *chunking_context
+                    .evaluated_chunk_group(
+                        server_action_manifest_loader.ident(),
+                        Vc::cell(vec![server_action_manifest_loader]),
+                        module_graph,
+                        Value::new(AvailabilityInfo::Root),
+                    )
+                    .await?;
+
                 let mut evaluatable_assets =
                     this.app_project.edge_rsc_runtime_entries().owned().await?;
                 let evaluatable = ResolvedVc::try_sidecast(app_entry.rsc_entry)
                     .context("Entry module must be evaluatable")?;
                 evaluatable_assets.push(evaluatable);
-                evaluatable_assets.push(server_action_manifest_loader);
 
-                {
-                    let _span = tracing::info_span!("Server Components");
+                assets.concatenate(
                     chunking_context
                         .evaluated_chunk_group_assets(
                             app_entry.rsc_entry.ident(),
                             Vc::cell(evaluatable_assets.clone()),
                             module_graph,
-                            Value::new(AvailabilityInfo::Root),
+                            Value::new(availability_info),
                         )
                         .resolve()
-                        .await?
-                }
+                        .await?,
+                )
             }
             NextRuntime::NodeJs => {
                 let mut evaluatable_assets = this.app_project.rsc_runtime_entries().owned().await?;
@@ -1906,9 +1921,15 @@ impl Endpoint for AppEndpoint {
 
     #[turbo_tasks::function]
     async fn entries(self: Vc<Self>) -> Result<Vc<GraphEntries>> {
+        let app_entry = self.app_endpoint_entry().await?;
+        let runtime = app_entry.config.await?.runtime.unwrap_or_default();
+
         Ok(Vc::cell(vec![(
-            vec![self.app_endpoint_entry().await?.rsc_entry],
-            Some(ChunkGroupType::Entry),
+            vec![app_entry.rsc_entry],
+            Some(match runtime {
+                NextRuntime::NodeJs => ChunkGroupType::Entry,
+                NextRuntime::Edge => ChunkGroupType::Evaluated,
+            }),
         )]))
     }
 
@@ -1950,7 +1971,10 @@ impl Endpoint for AppEndpoint {
 
         Ok(Vc::cell(vec![(
             vec![server_actions_loader],
-            Some(ChunkGroupType::Entry),
+            Some(match runtime {
+                NextRuntime::NodeJs => ChunkGroupType::Entry,
+                NextRuntime::Edge => ChunkGroupType::Evaluated,
+            }),
         )]))
     }
 }
