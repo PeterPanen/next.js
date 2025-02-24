@@ -12,7 +12,7 @@ use turbo_tasks_fs::{File, FileContent, FileSystemPath};
 use turbopack_core::{
     asset::AssetContent,
     chunk::{
-        availability_info::AvailabilityInfo, ChunkGroupType, ChunkingContext, ChunkingContextExt,
+        availability_info::AvailabilityInfo, ChunkingContext, ChunkingContextExt,
         EntryChunkGroupResult,
     },
     context::AssetContext,
@@ -101,9 +101,7 @@ impl InstrumentationEndpoint {
 
         let module = self.core_modules().await?.edge_entry_module;
 
-        let module_graph = this
-            .project
-            .module_graph(*module, ChunkGroupType::Evaluated);
+        let module_graph = this.project.module_graph(*module);
 
         let mut evaluatable_assets = get_server_runtime_entries(
             Value::new(ServerContextType::Instrumentation {
@@ -146,9 +144,7 @@ impl InstrumentationEndpoint {
         let chunking_context = this.project.server_chunking_context(false);
 
         let userland_module = self.core_modules().await?.userland_module;
-        let module_graph = this
-            .project
-            .module_graph(*userland_module, ChunkGroupType::Entry);
+        let module_graph = this.project.module_graph(*userland_module);
 
         let Some(module) = ResolvedVc::try_downcast(userland_module) else {
             bail!("Entry module must be evaluatable");
@@ -286,15 +282,9 @@ impl Endpoint for InstrumentationEndpoint {
     async fn entries(self: Vc<Self>) -> Result<Vc<GraphEntries>> {
         let core_modules = self.core_modules().await?;
         Ok(Vc::cell(vec![if self.await?.is_edge {
-            (
-                vec![core_modules.edge_entry_module],
-                Some(ChunkGroupType::Evaluated),
-            )
+            (vec![core_modules.edge_entry_module], true)
         } else {
-            (
-                vec![core_modules.userland_module],
-                Some(ChunkGroupType::Entry),
-            )
+            (vec![core_modules.userland_module], true)
         }]))
     }
 }

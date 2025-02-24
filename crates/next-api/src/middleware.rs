@@ -128,9 +128,7 @@ impl MiddlewareEndpoint {
         evaluatable_assets.push(evaluatable.to_resolved().await?);
 
         let evaluatable_assets = Vc::cell(evaluatable_assets);
-        let module_graph = this
-            .project
-            .module_graph_for_entries(evaluatable_assets, ChunkGroupType::Evaluated);
+        let module_graph = this.project.module_graph_for_entries(evaluatable_assets);
 
         let edge_chunking_context = this.project.edge_chunking_context(false);
 
@@ -150,9 +148,7 @@ impl MiddlewareEndpoint {
         let chunking_context = this.project.server_chunking_context(false);
 
         let userland_module = self.entry_module().to_resolved().await?;
-        let module_graph = this
-            .project
-            .module_graph(*userland_module, ChunkGroupType::Entry);
+        let module_graph = this.project.module_graph(*userland_module);
 
         let Some(module) = ResolvedVc::try_downcast(userland_module) else {
             bail!("Entry module must be evaluatable");
@@ -161,7 +157,6 @@ impl MiddlewareEndpoint {
         let EntryChunkGroupResult { asset: chunk, .. } = *chunking_context
             .entry_chunk_group(
                 this.project.node_root().join("server/middleware.js".into()),
-                *module,
                 get_server_runtime_entries(
                     Value::new(ServerContextType::Middleware {
                         app_dir: this.app_dir,
@@ -170,7 +165,8 @@ impl MiddlewareEndpoint {
                     }),
                     this.project.next_mode(),
                 )
-                .resolve_entries(*this.asset_context),
+                .resolve_entries(*this.asset_context)
+                .with_entry(*module),
                 module_graph,
                 OutputAssets::empty(),
                 Value::new(AvailabilityInfo::Root),
@@ -411,7 +407,7 @@ impl Endpoint for MiddlewareEndpoint {
     async fn entries(self: Vc<Self>) -> Result<Vc<GraphEntries>> {
         Ok(Vc::cell(vec![(
             vec![self.entry_module().to_resolved().await?],
-            Some(ChunkGroupType::Evaluated),
+            true,
         )]))
     }
 }

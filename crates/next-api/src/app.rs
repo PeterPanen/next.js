@@ -53,8 +53,8 @@ use turbopack::{
 use turbopack_core::{
     asset::AssetContent,
     chunk::{
-        availability_info::AvailabilityInfo, ChunkGroupResult, ChunkGroupType, ChunkingContext,
-        ChunkingContextExt, EvaluatableAsset, EvaluatableAssets,
+        availability_info::AvailabilityInfo, ChunkGroupResult, ChunkingContext, ChunkingContextExt,
+        EvaluatableAsset, EvaluatableAssets,
     },
     file_source::FileSource,
     ident::AssetIdent,
@@ -813,7 +813,6 @@ impl AppProject {
         &self,
         endpoint: Vc<AppEndpoint>,
         rsc_entry: ResolvedVc<Box<dyn Module>>,
-        runtime: NextRuntime,
         client_shared_entries: Vc<EvaluatableAssets>,
         has_layout_segments: bool,
     ) -> Result<Vc<ModuleGraphs>> {
@@ -842,9 +841,9 @@ impl AppProject {
                                     .map(async |m| Ok(ResolvedVc::upcast(m.await?.module)))
                                     .try_join()
                                     .await?,
-                                None,
+                                false,
                             ),
-                            (client_shared_entries, Some(ChunkGroupType::Evaluated)),
+                            (client_shared_entries, true),
                         ],
                         VisitedModules::empty(),
                     );
@@ -853,7 +852,7 @@ impl AppProject {
 
                     for module in server_component_entries.iter() {
                         let graph = SingleModuleGraph::new_with_entries_visited(
-                            vec![(vec![ResolvedVc::upcast(*module)], None)],
+                            vec![(vec![ResolvedVc::upcast(*module)], false)],
                             visited_modules,
                         );
                         graphs.push(graph);
@@ -874,7 +873,7 @@ impl AppProject {
                     visited_modules
                 } else {
                     let graph = SingleModuleGraph::new_with_entries_visited(
-                        vec![(client_shared_entries, Some(ChunkGroupType::Evaluated))],
+                        vec![(client_shared_entries, true)],
                         VisitedModules::empty(),
                     );
                     graphs.push(graph);
@@ -882,13 +881,7 @@ impl AppProject {
                 };
 
                 let graph = SingleModuleGraph::new_with_entries_visited(
-                    vec![(
-                        vec![ResolvedVc::upcast(rsc_entry)],
-                        Some(match runtime {
-                            NextRuntime::NodeJs => ChunkGroupType::Entry,
-                            NextRuntime::Edge => ChunkGroupType::Evaluated,
-                        }),
-                    )],
+                    vec![(vec![ResolvedVc::upcast(rsc_entry)], true)],
                     visited_modules,
                 );
                 graphs.push(graph);
@@ -1142,7 +1135,6 @@ impl AppEndpoint {
             .app_module_graphs(
                 self,
                 *rsc_entry,
-                runtime,
                 this.app_project.client_runtime_entries(),
                 matches!(this.ty, AppEndpointType::Page { .. }),
             )
@@ -1705,10 +1697,7 @@ impl AppEndpoint {
                                 AssetIdent::from_path(this.app_project.project().project_path())
                                     .with_modifier(server_utils_modifier()),
                                 // TODO this should be ChunkGroup::Shared
-                                ChunkGroup::Entry {
-                                    entries: server_utils,
-                                    ty: ChunkGroupType::Entry,
-                                },
+                                ChunkGroup::Entry(server_utils),
                                 module_graph,
                                 Value::new(current_availability_info),
                             )
@@ -1744,12 +1733,9 @@ impl AppEndpoint {
                                 .chunk_group(
                                     server_component.ident(),
                                     // TODO this should be ChunkGroup::Shared
-                                    ChunkGroup::Entry {
-                                        entries: vec![ResolvedVc::upcast(
-                                            server_component.await?.module,
-                                        )],
-                                        ty: ChunkGroupType::Entry,
-                                    },
+                                    ChunkGroup::Entry(vec![ResolvedVc::upcast(
+                                        server_component.await?.module,
+                                    )]),
                                     module_graph,
                                     Value::new(current_availability_info),
                                 )
@@ -1922,15 +1908,7 @@ impl Endpoint for AppEndpoint {
     #[turbo_tasks::function]
     async fn entries(self: Vc<Self>) -> Result<Vc<GraphEntries>> {
         let app_entry = self.app_endpoint_entry().await?;
-        let runtime = app_entry.config.await?.runtime.unwrap_or_default();
-
-        Ok(Vc::cell(vec![(
-            vec![app_entry.rsc_entry],
-            Some(match runtime {
-                NextRuntime::NodeJs => ChunkGroupType::Entry,
-                NextRuntime::Edge => ChunkGroupType::Evaluated,
-            }),
-        )]))
+        Ok(Vc::cell(vec![(vec![app_entry.rsc_entry], true)]))
     }
 
     #[turbo_tasks::function]
@@ -1969,13 +1947,7 @@ impl Endpoint for AppEndpoint {
             .await?,
         );
 
-        Ok(Vc::cell(vec![(
-            vec![server_actions_loader],
-            Some(match runtime {
-                NextRuntime::NodeJs => ChunkGroupType::Entry,
-                NextRuntime::Edge => ChunkGroupType::Evaluated,
-            }),
-        )]))
+        Ok(Vc::cell(vec![(vec![server_actions_loader], true)]))
     }
 }
 
