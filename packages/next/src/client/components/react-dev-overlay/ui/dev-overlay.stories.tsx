@@ -18,7 +18,9 @@ type Story = StoryObj<typeof DevOverlay>
 const state: OverlayState = {
   nextId: 0,
   buildError: null,
-  disableDevIndicator: false,
+  devIndicator: {
+    isDisabled: false,
+  },
   errors: [
     {
       id: 1,
