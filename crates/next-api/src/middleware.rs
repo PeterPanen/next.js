@@ -16,12 +16,12 @@ use turbo_tasks_fs::{self, File, FileContent, FileSystemPath};
 use turbopack_core::{
     asset::AssetContent,
     chunk::{
-        availability_info::AvailabilityInfo, ChunkGroupType, ChunkingContext, ChunkingContextExt,
+        availability_info::AvailabilityInfo, ChunkingContext, ChunkingContextExt,
         EntryChunkGroupResult, EvaluatableAsset,
     },
     context::AssetContext,
     module::Module,
-    module_graph::GraphEntries,
+    module_graph::{chunk_group_info::ChunkGroupEntry, GraphEntries},
     output::{OutputAsset, OutputAssets},
     reference_type::{EntryReferenceSubType, ReferenceType},
     source::Source,
@@ -405,9 +405,10 @@ impl Endpoint for MiddlewareEndpoint {
 
     #[turbo_tasks::function]
     async fn entries(self: Vc<Self>) -> Result<Vc<GraphEntries>> {
-        Ok(Vc::cell(vec![(
-            vec![self.entry_module().to_resolved().await?],
-            true,
+        Ok(Vc::cell(vec![ChunkGroupEntry::Entry(
+            [self.entry_module().to_resolved().await?]
+                .into_iter()
+                .collect(),
         )]))
     }
 }

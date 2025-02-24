@@ -31,7 +31,7 @@ use next_core::{
         get_server_module_options_context, get_server_resolve_options_context,
         get_server_runtime_entries, ServerContextType,
     },
-    next_server_utility::NextServerUtilityTransition,
+    next_server_utility::{NextServerUtilityTransition, NEXT_SERVER_UTILITY_MERGE_TAG},
     parse_segment_config_from_source,
     util::NextRuntime,
 };
@@ -60,7 +60,8 @@ use turbopack_core::{
     ident::AssetIdent,
     module::Module,
     module_graph::{
-        chunk_group_info::ChunkGroup, GraphEntries, ModuleGraph, SingleModuleGraph, VisitedModules,
+        chunk_group_info::{ChunkGroup, ChunkGroupEntry},
+        GraphEntries, ModuleGraph, SingleModuleGraph, VisitedModules,
     },
     output::{OutputAsset, OutputAssets},
     raw_output::RawOutput,
@@ -826,6 +827,9 @@ impl AppProject {
             // Implements layout segment optimization to compute a graph "chain" for each layout
             // segment
             async move {
+                let rsc_entry_chunk_group =
+                    ChunkGroupEntry::Entry([ResolvedVc::upcast(rsc_entry)].into_iter().collect());
+
                 let mut graphs = vec![];
                 let mut visited_modules = if has_layout_segments {
                     let ServerEntries {
@@ -835,15 +839,16 @@ impl AppProject {
 
                     let graph = SingleModuleGraph::new_with_entries_visited(
                         vec![
-                            (
-                                server_utils
+                            ChunkGroupEntry::SharedMerged {
+                                parent: Box::new(rsc_entry_chunk_group.clone()),
+                                merge_tag: NEXT_SERVER_UTILITY_MERGE_TAG.clone(),
+                                entries: server_utils
                                     .iter()
                                     .map(async |m| Ok(ResolvedVc::upcast(m.await?.module)))
                                     .try_join()
                                     .await?,
-                                false,
-                            ),
-                            (client_shared_entries, true),
+                            },
+                            ChunkGroupEntry::Entry(client_shared_entries),
                         ],
                         VisitedModules::empty(),
                     );
@@ -852,7 +857,9 @@ impl AppProject {
 
                     for module in server_component_entries.iter() {
                         let graph = SingleModuleGraph::new_with_entries_visited(
-                            vec![(vec![ResolvedVc::upcast(*module)], false)],
+                            vec![ChunkGroupEntry::Shared(ResolvedVc::upcast(
+                                module.await?.module,
+                            ))],
                             visited_modules,
                         );
                         graphs.push(graph);
@@ -873,7 +880,7 @@ impl AppProject {
                     visited_modules
                 } else {
                     let graph = SingleModuleGraph::new_with_entries_visited(
-                        vec![(client_shared_entries, true)],
+                        vec![ChunkGroupEntry::Entry(client_shared_entries)],
                         VisitedModules::empty(),
                     );
                     graphs.push(graph);
@@ -881,7 +888,7 @@ impl AppProject {
                 };
 
                 let graph = SingleModuleGraph::new_with_entries_visited(
-                    vec![(vec![ResolvedVc::upcast(rsc_entry)], true)],
+                    vec![rsc_entry_chunk_group],
                     visited_modules,
                 );
                 graphs.push(graph);
@@ -1908,7 +1915,9 @@ impl Endpoint for AppEndpoint {
     #[turbo_tasks::function]
     async fn entries(self: Vc<Self>) -> Result<Vc<GraphEntries>> {
         let app_entry = self.app_endpoint_entry().await?;
-        Ok(Vc::cell(vec![(vec![app_entry.rsc_entry], true)]))
+        Ok(Vc::cell(vec![ChunkGroupEntry::Entry(vec![
+            app_entry.rsc_entry,
+        ])]))
     }
 
     #[turbo_tasks::function]
@@ -1947,7 +1956,9 @@ impl Endpoint for AppEndpoint {
             .await?,
         );
 
-        Ok(Vc::cell(vec![(vec![server_actions_loader], true)]))
+        Ok(Vc::cell(vec![ChunkGroupEntry::Entry(
+            [server_actions_loader].into_iter().collect(),
+        )]))
     }
 }
 
